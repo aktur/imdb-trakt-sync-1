@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
-	"github.com/cecobask/imdb-trakt-sync/pkg/client"
+	"github.com/aktur/imdb-trakt-sync-1/pkg/client"
 	"io"
 	"log"
 	"net/http"
@@ -380,7 +380,7 @@ func (tc *Client) ListAdd(listId, listName string) {
 		Path:   fmt.Sprintf(userListPath, tc.Config.UserId, ""),
 		Body: listAddBody{
 			Name:           listName,
-			Description:    fmt.Sprintf("list auto imported from imdb by https://github.com/cecobask/imdb-trakt-sync on %v", time.Now().Format(time.RFC1123)),
+			Description:    fmt.Sprintf("list auto imported from imdb by https://github.com/aktur/imdb-trakt-sync-1 on %v", time.Now().Format(time.RFC1123)),
 			Privacy:        "public",
 			DisplayNumbers: false,
 			AllowComments:  true,

@@ -1,4 +1,4 @@
-[![sync](https://github.com/cecobask/imdb-trakt-sync/actions/workflows/sync.yml/badge.svg?event=schedule)](https://github.com/cecobask/imdb-trakt-sync/actions/workflows/sync.yml)  
+[![sync](https://github.com/aktur/imdb-trakt-sync-1/actions/workflows/sync.yml/badge.svg?event=schedule)](https://github.com/aktur/imdb-trakt-sync-1/actions/workflows/sync.yml)
 # imdb-trakt-sync
 GoLang app that can sync [IMDb](https://www.imdb.com/) and [Trakt](https://trakt.tv/dashboard) user data - watchlist, 
 lists, ratings and history.  

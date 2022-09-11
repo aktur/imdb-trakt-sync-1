@@ -2,9 +2,9 @@ package providers
 
 import (
 	"errors"
-	"github.com/cecobask/imdb-trakt-sync/pkg/client"
-	"github.com/cecobask/imdb-trakt-sync/pkg/providers/imdb"
-	"github.com/cecobask/imdb-trakt-sync/pkg/providers/trakt"
+	"github.com/aktur/imdb-trakt-sync-1/pkg/client"
+	"github.com/aktur/imdb-trakt-sync-1/pkg/providers/imdb"
+	"github.com/aktur/imdb-trakt-sync-1/pkg/providers/trakt"
 	"os"
 	"strings"
 )
@@ -80,13 +80,13 @@ func (u *user) syncLists(tc *trakt.Client) {
 			tc.ListItemsRemove(list.TraktListId, diff["remove"])
 		}
 	}
-	// Remove lists that only exist in Trakt
-	traktLists := tc.ListsGet()
-	for _, tl := range traktLists {
-		if !contains(u.lists, tl.Name) {
-			tc.ListRemove(tl.Ids.Slug)
-		}
-	}
+	// // Remove lists that only exist in Trakt
+	// traktLists := tc.ListsGet()
+	// for _, tl := range traktLists {
+	// 	if !contains(u.lists, tl.Name) {
+	// 		tc.ListRemove(tl.Ids.Slug)
+	// 	}
+	// }
 }
 
 func (u *user) syncRatings(tc *trakt.Client) {

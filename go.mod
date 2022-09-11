@@ -1,4 +1,4 @@
-module github.com/cecobask/imdb-trakt-sync
+module github.com/aktur/imdb-trakt-sync-1
 
 go 1.18
 
