@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/cecobask/imdb-trakt-sync/pkg/providers"
-	"github.com/cecobask/imdb-trakt-sync/pkg/providers/imdb"
-	"github.com/cecobask/imdb-trakt-sync/pkg/providers/trakt"
+	"github.com/aktur/imdb-trakt-sync-1/pkg/providers"
+	"github.com/aktur/imdb-trakt-sync-1/pkg/providers/imdb"
+	"github.com/aktur/imdb-trakt-sync-1/pkg/providers/trakt"
 	_ "github.com/joho/godotenv/autoload"
 	"log"
 	"os"
