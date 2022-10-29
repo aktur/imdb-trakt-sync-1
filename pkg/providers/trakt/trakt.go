@@ -20,6 +20,7 @@ import (
 const (
 	authorizationHeaderName = "Authorization"
 	contentTypeHeaderName   = "Content-Type"
+	AccessTokenKey          = "TRAKT_ACCESS_TOKEN"
 	UsernameKey             = "TRAKT_USERNAME"
 	PasswordKey             = "TRAKT_PASSWORD"
 	apiKeyHeaderName        = "trakt-api-key"
@@ -193,12 +194,14 @@ func NewClient() *Client {
 	if err != nil {
 		log.Fatalf("error creating goquery document from trakt response: %v", err)
 	}
-	log.Print(doc.Text())
 	pinCode := doc.Find("#auth-form-wrapper > div.bottom-wrapper.pin-code").Text()
 	if pinCode == "" {
-		log.Fatalf("error scraping trakt pin code: pin code not found")
+		log.Printf("error scraping trakt pin code: pin code not found")
+		c.Config.accessToken = os.Getenv(AccessTokenKey)
+	}else{
+		log.Printf("retrieved new access token")
+	  c.Config.accessToken = c.GetAccessToken(pinCode)
 	}
-	c.Config.accessToken = c.GetAccessToken(pinCode)
 	return c
 }
 
