@@ -193,6 +193,7 @@ func NewClient() *Client {
 	if err != nil {
 		log.Fatalf("error creating goquery document from trakt response: %v", err)
 	}
+	log.Print(doc.Text())
 	pinCode := doc.Find("#auth-form-wrapper > div.bottom-wrapper.pin-code").Text()
 	if pinCode == "" {
 		log.Fatalf("error scraping trakt pin code: pin code not found")
