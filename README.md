@@ -7,12 +7,21 @@ Keep in mind that this application is performing a one-way sync from IMDb to Tra
 in IMDb will be reflected on Trakt. However, anything you change in Trakt will be overwritten by the state you have in IMDb.  
 As much as I wanted to provide a two-way sync functionality, this will not be possible until IMDb decides to expose a public API.
 
+## Sync your local fork with upstream
+
+- git remote add upstream https://github.com/cecobask/imdb-trakt-sync.git
+- git fetch upstream main\n
+- git rebase upstream/main
+- *resolve conflicts is any*
+- git rebase --continue *(in case there were conflicts)*
+- git push origin main --force
+
 # Usage
 The application can be setup to run automatically, based on a custom schedule (_default: once every 3 hours_) using 
 `GitHub Actions` or locally on your machine. Follow the relevant section below, based on how you want to use the application. 
 
 ## Run the application using GitHub Actions
-1. [Fork the repository](https://github.com/cecobask/imdb-trakt-sync/fork) to your account
+1. [Fork the repository](https://github.com/aktur/imdb-trakt-sync-1/fork) to your account
 2. [Create a Trakt API application](https://trakt.tv/oauth/applications). Give it a name and use `urn:ietf:wg:oauth:2.0:oob` 
 as redirect uri. The rest of the fields can be left empty
 3. Configure GitHub repository secrets:
