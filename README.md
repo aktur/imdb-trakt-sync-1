@@ -55,6 +55,8 @@ curl --include \
 'https://api.trakt.tv/oauth/token'
 ```
 Put "access_token" in the corresponding secret on https://github.com/aktur/imdb-trakt-sync-1/settings/secrets/actions
+
+The Trakt documentation is here https://trakt.docs.apiary.io/#reference/authentication-oauth/get-token/exchange-code-for-access_token?console=1
 ## Run the application locally
 1. Clone the repository to your machine
 2. [Create a Trakt API application](https://trakt.tv/oauth/applications). Give it a name and use `urn:ietf:wg:oauth:2.0:oob`
