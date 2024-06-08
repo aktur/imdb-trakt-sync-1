@@ -1,4 +1,4 @@
-[![sync](https://github.com/cecobask/imdb-trakt-sync/actions/workflows/sync.yaml/badge.svg)](https://github.com/cecobask/imdb-trakt-sync/actions/workflows/sync.yaml)
+[![sync](https://github.com/aktur/imdb-trakt-sync-1/actions/workflows/sync.yaml/badge.svg)](https://github.com/aktur/imdb-trakt-sync-1/actions/workflows/sync.yaml)
 [![quality](https://github.com/cecobask/imdb-trakt-sync/actions/workflows/quality.yaml/badge.svg)](https://github.com/cecobask/imdb-trakt-sync/actions/workflows/quality.yaml)
 [![codecov](https://codecov.io/gh/cecobask/imdb-trakt-sync/graph/badge.svg)](https://codecov.io/gh/cecobask/imdb-trakt-sync)
 # imdb-trakt-sync
