@@ -4,7 +4,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: "0 */12 * * *"
+    - cron: "15 4,16 * * *"
   workflow_dispatch:
 env:
   ITS_IMDB_COOKIEATMAIN: ${{ secrets.IMDB_COOKIEATMAIN }}
