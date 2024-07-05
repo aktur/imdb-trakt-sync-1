@@ -5,6 +5,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
+	"unicode"
 
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/confmap"
@@ -14,9 +16,10 @@ import (
 )
 
 type IMDb struct {
-	CookieAtMain   *string  `koanf:"COOKIEATMAIN"`
-	CookieUbidMain *string  `koanf:"COOKIEUBIDMAIN"`
-	Lists          []string `koanf:"LISTS"`
+	Email    *string   `koanf:"EMAIL"`
+	Password *string   `koanf:"PASSWORD"`
+	Lists    *[]string `koanf:"LISTS"`
+	Trace    bool      `koanf:"TRACE"`
 }
 
 type Trakt struct {
@@ -27,8 +30,9 @@ type Trakt struct {
 }
 
 type Sync struct {
-	Mode        *string `koanf:"MODE"`
-	SkipHistory *bool   `koanf:"SKIPHISTORY"`
+	Mode        *string       `koanf:"MODE"`
+	SkipHistory *bool         `koanf:"SKIPHISTORY"`
+	Timeout     time.Duration `koanf:"TIMEOUT"`
 }
 
 type Config struct {
@@ -84,11 +88,11 @@ func NewFromMap(data map[string]interface{}) (*Config, error) {
 }
 
 func (c *Config) Validate() error {
-	if c.IMDb.CookieAtMain == nil {
-		return fmt.Errorf("config field 'IMDB_COOKIEATMAIN' is required")
+	if c.IMDb.Email == nil {
+		return fmt.Errorf("config field 'IMDB_EMAIL' is required")
 	}
-	if c.IMDb.CookieUbidMain == nil {
-		return fmt.Errorf("config field 'IMDB_COOKIEUBIDMAIN' is required")
+	if c.IMDb.Password == nil {
+		return fmt.Errorf("config field 'IMDB_PASSWORD' is required")
 	}
 	if c.Trakt.Email == nil {
 		return fmt.Errorf("config field 'TRAKT_EMAIL' is required")
@@ -111,6 +115,11 @@ func (c *Config) Validate() error {
 	if !slices.Contains(validSyncModes(), *c.Sync.Mode) {
 		return fmt.Errorf("config field 'SYNC_MODE' must be one of: %s", strings.Join(validSyncModes(), ", "))
 	}
+	c.stripSpace()
+	if c.IMDb.Lists == nil {
+		var emptySlice []string
+		c.IMDb.Lists = &emptySlice
+	}
 	return nil
 }
 
@@ -124,6 +133,29 @@ func (c *Config) WriteFile(path string) error {
 
 func (c *Config) Flatten() map[string]interface{} {
 	return c.koanf.All()
+}
+
+func (c *Config) stripSpace() {
+	imdbEmail := stripSpace(*c.IMDb.Email)
+	traktEmail := stripSpace(*c.Trakt.Email)
+	traktClientID := stripSpace(*c.Trakt.ClientID)
+	traktClientSecret := stripSpace(*c.Trakt.ClientSecret)
+	syncMode := stripSpace(*c.Sync.Mode)
+	c.IMDb.Email = &imdbEmail
+	c.Trakt.Email = &traktEmail
+	c.Trakt.ClientID = &traktClientID
+	c.Trakt.ClientSecret = &traktClientSecret
+	c.Sync.Mode = &syncMode
+}
+
+func stripSpace(s string) string {
+	var sb strings.Builder
+	for _, r := range s {
+		if !unicode.IsSpace(r) {
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
 }
 
 func validSyncModes() []string {
