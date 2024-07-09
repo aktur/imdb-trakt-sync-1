@@ -25,7 +25,7 @@ TRAKT:
   CLIENTSECRET: xXx
 SYNC:
   MODE: dry-run
-  SKIPHISTORY: true
+  HISTORY: true
 `
 	type args struct {
 		includeEnv bool
@@ -56,7 +56,7 @@ SYNC:
 				assertions.NotEmpty(config.Trakt.ClientID)
 				assertions.NotEmpty(config.Trakt.ClientSecret)
 				assertions.NotEmpty(config.Sync.Mode)
-				assertions.NotEmpty(config.Sync.SkipHistory)
+				assertions.NotEmpty(config.Sync.History)
 			},
 		},
 		{
@@ -81,7 +81,7 @@ SYNC:
 				assertions.NotEmpty(config.Trakt.ClientID)
 				assertions.NotEmpty(config.Trakt.ClientSecret)
 				assertions.NotEmpty(config.Sync.Mode)
-				assertions.NotEmpty(config.Sync.SkipHistory)
+				assertions.NotEmpty(config.Sync.History)
 			},
 		},
 		{
@@ -102,7 +102,7 @@ SYNC:
 			requirements: func(t *testing.T, path string) {
 				err := os.WriteFile(path, []byte(dummyConfig), 0644)
 				require.Nil(t, err)
-				t.Setenv("ITS_SYNC_SKIPHISTORY", "invalid")
+				t.Setenv("ITS_SYNC_HISTORY", "invalid")
 			},
 			assertions: func(assertions *assert.Assertions, config *Config, err error) {
 				assertions.NotNil(err)
@@ -137,6 +137,7 @@ func TestConfig_Validate(t *testing.T) {
 			name: "success",
 			fields: fields{
 				IMDb: IMDb{
+					Auth:     pointer(IMDbAuthMethodCredentials),
 					Email:    new(string),
 					Password: new(string),
 				},
@@ -147,11 +148,8 @@ func TestConfig_Validate(t *testing.T) {
 					ClientSecret: new(string),
 				},
 				Sync: Sync{
-					Mode: func() *string {
-						s := SyncModeFull
-						return &s
-					}(),
-					SkipHistory: new(bool),
+					Mode:    pointer(SyncModeFull),
+					History: new(bool),
 				},
 			},
 			assertions: func(assertions *assert.Assertions, err error) {
@@ -162,6 +160,7 @@ func TestConfig_Validate(t *testing.T) {
 			name: "missing IMDb.Email",
 			fields: fields{
 				IMDb: IMDb{
+					Auth:  pointer(IMDbAuthMethodCredentials),
 					Email: nil,
 				},
 			},
@@ -174,6 +173,7 @@ func TestConfig_Validate(t *testing.T) {
 			name: "missing IMDb.Password",
 			fields: fields{
 				IMDb: IMDb{
+					Auth:     pointer(IMDbAuthMethodCredentials),
 					Email:    new(string),
 					Password: nil,
 				},
@@ -184,9 +184,49 @@ func TestConfig_Validate(t *testing.T) {
 			},
 		},
 		{
+			name: "missing IMDb.CookieAtMain",
+			fields: fields{
+				IMDb: IMDb{
+					Auth:         pointer(IMDbAuthMethodCookies),
+					CookieAtMain: nil,
+				},
+			},
+			assertions: func(assertions *assert.Assertions, err error) {
+				assertions.NotNil(err)
+				assertions.Contains(err.Error(), "IMDB_COOKIEATMAIN")
+			},
+		},
+		{
+			name: "missing IMDb.CookieUbidMain",
+			fields: fields{
+				IMDb: IMDb{
+					Auth:           pointer(IMDbAuthMethodCookies),
+					CookieAtMain:   new(string),
+					CookieUbidMain: nil,
+				},
+			},
+			assertions: func(assertions *assert.Assertions, err error) {
+				assertions.NotNil(err)
+				assertions.Contains(err.Error(), "IMDB_COOKIEUBIDMAIN")
+			},
+		},
+		{
+			name: "invalid IMDb.Auth",
+			fields: fields{
+				IMDb: IMDb{
+					Auth: pointer("invalid"),
+				},
+			},
+			assertions: func(assertions *assert.Assertions, err error) {
+				assertions.NotNil(err)
+				assertions.Contains(err.Error(), "IMDB_AUTH")
+			},
+		},
+		{
 			name: "missing Trakt.Email",
 			fields: fields{
 				IMDb: IMDb{
+					Auth:     pointer(IMDbAuthMethodCredentials),
 					Email:    new(string),
 					Password: new(string),
 				},
@@ -203,6 +243,7 @@ func TestConfig_Validate(t *testing.T) {
 			name: "missing Trakt.Password",
 			fields: fields{
 				IMDb: IMDb{
+					Auth:     pointer(IMDbAuthMethodCredentials),
 					Email:    new(string),
 					Password: new(string),
 				},
@@ -220,6 +261,7 @@ func TestConfig_Validate(t *testing.T) {
 			name: "missing Trakt.ClientID",
 			fields: fields{
 				IMDb: IMDb{
+					Auth:     pointer(IMDbAuthMethodCredentials),
 					Email:    new(string),
 					Password: new(string),
 				},
@@ -238,6 +280,7 @@ func TestConfig_Validate(t *testing.T) {
 			name: "missing Trakt.ClientSecret",
 			fields: fields{
 				IMDb: IMDb{
+					Auth:     pointer(IMDbAuthMethodCredentials),
 					Email:    new(string),
 					Password: new(string),
 				},
@@ -257,6 +300,7 @@ func TestConfig_Validate(t *testing.T) {
 			name: "missing Sync.Mode",
 			fields: fields{
 				IMDb: IMDb{
+					Auth:     pointer(IMDbAuthMethodCredentials),
 					Email:    new(string),
 					Password: new(string),
 				},
@@ -276,35 +320,10 @@ func TestConfig_Validate(t *testing.T) {
 			},
 		},
 		{
-			name: "missing Sync.SkipHistory",
-			fields: fields{
-				IMDb: IMDb{
-					Email:    new(string),
-					Password: new(string),
-				},
-				Trakt: Trakt{
-					Email:        new(string),
-					Password:     new(string),
-					ClientID:     new(string),
-					ClientSecret: new(string),
-				},
-				Sync: Sync{
-					Mode: func() *string {
-						s := SyncModeFull
-						return &s
-					}(),
-					SkipHistory: nil,
-				},
-			},
-			assertions: func(assertions *assert.Assertions, err error) {
-				assertions.NotNil(err)
-				assertions.Contains(err.Error(), "SYNC_SKIPHISTORY")
-			},
-		},
-		{
 			name: "invalid Sync.Mode",
 			fields: fields{
 				IMDb: IMDb{
+					Auth:     pointer(IMDbAuthMethodCredentials),
 					Email:    new(string),
 					Password: new(string),
 				},
@@ -319,7 +338,7 @@ func TestConfig_Validate(t *testing.T) {
 						s := "invalid"
 						return &s
 					}(),
-					SkipHistory: new(bool),
+					History: new(bool),
 				},
 			},
 			assertions: func(assertions *assert.Assertions, err error) {
@@ -331,6 +350,7 @@ func TestConfig_Validate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &Config{
+				koanf: koanf.New("_"),
 				IMDb:  tt.fields.IMDb,
 				Trakt: tt.fields.Trakt,
 				Sync:  tt.fields.Sync,
@@ -463,7 +483,7 @@ func TestNewFromMap(t *testing.T) {
 			args: args{
 				data: map[string]interface{}{
 					"SYNC": map[string]interface{}{
-						"SKIPHISTORY": "invalid",
+						"HISTORY": "invalid",
 					},
 				},
 			},
