@@ -84,14 +84,27 @@ func authenticateUser(browser *rod.Browser, config *appconfig.IMDb) error {
 	if *config.Auth == appconfig.IMDbAuthMethodNone {
 		return nil
 	}
-	if *config.Auth == appconfig.IMDbAuthMethodCookies {
-		return setBrowserCookies(browser, config)
-	}
 	tab, err := stealth.Page(browser)
 	if err != nil {
 		return fmt.Errorf("failure opening browser tab: %w", err)
 	}
 	defer tab.MustClose()
+	if *config.Auth == appconfig.IMDbAuthMethodCookies {
+		if err = setBrowserCookies(browser, config); err != nil {
+			return err
+		}
+		if tab, err = navigateAndValidateResponse(tab, imdbPathBase); err != nil {
+			return fmt.Errorf("failure navigating and validating response: %w", err)
+		}
+		authenticated, _, err := tab.Has("#nblogout")
+		if err != nil {
+			return fmt.Errorf("failure finding logout div")
+		}
+		if !authenticated {
+			return fmt.Errorf("failure authenticating with the provided cookies")
+		}
+		return nil
+	}
 	if tab, err = navigateAndValidateResponse(tab, imdbPathBase+imdbPathSignIn); err != nil {
 		return fmt.Errorf("failure navigating and validating response: %w", err)
 	}
@@ -481,9 +494,12 @@ func (c *IMDbClient) lidsScrape() ([]string, error) {
 	if tab, err = navigateAndValidateResponse(tab, imdbPathBase+imdbPathLists); err != nil {
 		return nil, fmt.Errorf("failure navigating and validating response: %w", err)
 	}
-	listCountDiv, err := tab.Element("div[data-testid='list-page-mc-total-items']")
+	hasLists, listCountDiv, err := tab.Has("div[data-testid='list-page-mc-total-items']")
 	if err != nil {
 		return nil, fmt.Errorf("failure finding list count div: %w", err)
+	}
+	if !hasLists {
+		return make([]string, 0), nil
 	}
 	listCountText, err := listCountDiv.Text()
 	if err != nil {
@@ -630,7 +646,7 @@ func navigateAndValidateResponse(tab *rod.Page, url string) (*rod.Page, error) {
 	if status := event.Response.Status; status != http.StatusOK {
 		return nil, fmt.Errorf("navigating to %s produced %d status", url, status)
 	}
-	if err := tab.WaitStable(time.Second); err != nil {
+	if err := tab.WaitLoad(); err != nil {
 		return nil, fmt.Errorf("failure waiting for tab to load: %w", err)
 	}
 	return tab, nil
