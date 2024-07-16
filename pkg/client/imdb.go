@@ -16,6 +16,7 @@ import (
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
 	"github.com/go-rod/stealth"
+	"golang.org/x/sync/errgroup"
 
 	appconfig "github.com/cecobask/imdb-trakt-sync/internal/config"
 	"github.com/cecobask/imdb-trakt-sync/internal/entities"
@@ -42,17 +43,12 @@ type IMDbClient struct {
 
 type imdbConfig struct {
 	*appconfig.IMDb
-	basePath    string
 	userID      string
 	username    string
 	watchlistID string
 }
 
 func NewIMDbClient(ctx context.Context, conf *appconfig.IMDb, logger *slog.Logger) (IMDbClientInterface, error) {
-	config := imdbConfig{
-		IMDb:     conf,
-		basePath: imdbPathBase,
-	}
 	browserPath, ok := launcher.LookPath()
 	if !ok {
 		return nil, fmt.Errorf("failure looking up browser path")
@@ -66,13 +62,15 @@ func NewIMDbClient(ctx context.Context, conf *appconfig.IMDb, logger *slog.Logge
 		return nil, fmt.Errorf("failure connecting to browser: %w", err)
 	}
 	logger.Info("launched new browser instance", slog.String("url", browserURL), slog.Bool("headless", *conf.Headless), slog.Bool("trace", *conf.Trace))
-	if err = authenticateUser(browser, config.IMDb); err != nil {
-		return nil, fmt.Errorf("failure authenticating user: %w", err)
-	}
 	c := &IMDbClient{
-		config:  &config,
+		config: &imdbConfig{
+			IMDb: conf,
+		},
 		logger:  logger,
 		browser: browser,
+	}
+	if err = c.authenticateUser(); err != nil {
+		return nil, fmt.Errorf("failure authenticating user: %w", err)
 	}
 	if err = c.hydrate(); err != nil {
 		return nil, fmt.Errorf("failure hydrating client: %w", err)
@@ -80,20 +78,17 @@ func NewIMDbClient(ctx context.Context, conf *appconfig.IMDb, logger *slog.Logge
 	return c, nil
 }
 
-func authenticateUser(browser *rod.Browser, config *appconfig.IMDb) error {
-	if *config.Auth == appconfig.IMDbAuthMethodNone {
+func (c *IMDbClient) authenticateUser() error {
+	if *c.config.Auth == appconfig.IMDbAuthMethodNone {
 		return nil
 	}
-	tab, err := stealth.Page(browser)
-	if err != nil {
-		return fmt.Errorf("failure opening browser tab: %w", err)
-	}
-	defer tab.MustClose()
-	if *config.Auth == appconfig.IMDbAuthMethodCookies {
-		if err = setBrowserCookies(browser, config); err != nil {
+	if *c.config.Auth == appconfig.IMDbAuthMethodCookies {
+		if err := setBrowserCookies(c.browser, c.config.IMDb); err != nil {
 			return err
 		}
-		if tab, err = navigateAndValidateResponse(tab, imdbPathBase); err != nil {
+		tab, cleanupFunc, err := c.navigateAndValidateResponse(imdbPathBase)
+		defer cleanupFunc()
+		if err != nil {
 			return fmt.Errorf("failure navigating and validating response: %w", err)
 		}
 		authenticated, _, err := tab.Has("#nblogout")
@@ -105,21 +100,23 @@ func authenticateUser(browser *rod.Browser, config *appconfig.IMDb) error {
 		}
 		return nil
 	}
-	if tab, err = navigateAndValidateResponse(tab, imdbPathBase+imdbPathSignIn); err != nil {
+	tab, cleanupFunc, err := c.navigateAndValidateResponse(imdbPathBase + imdbPathSignIn)
+	defer cleanupFunc()
+	if err != nil {
 		return fmt.Errorf("failure navigating and validating response: %w", err)
 	}
 	emailField, err := tab.Element("#ap_email")
 	if err != nil {
 		return fmt.Errorf("failure finding email field: %w", err)
 	}
-	if err = emailField.Input(*config.Email); err != nil {
+	if err = emailField.Input(*c.config.Email); err != nil {
 		return fmt.Errorf("failure inputting value in email field: %w", err)
 	}
 	passwordField, err := tab.Element("#ap_password")
 	if err != nil {
 		return fmt.Errorf("failure finding password field: %w", err)
 	}
-	if err = passwordField.Input(*config.Password); err != nil {
+	if err = passwordField.Input(*c.config.Password); err != nil {
 		return fmt.Errorf("failure inputting value in password field: %w", err)
 	}
 	submitButton, err := tab.Element("#signInSubmit")
@@ -129,18 +126,18 @@ func authenticateUser(browser *rod.Browser, config *appconfig.IMDb) error {
 	if err = submitButton.Click(proto.InputMouseButtonLeft, 1); err != nil {
 		return fmt.Errorf("failure clicking on submit button: %w", err)
 	}
-	authResult, err := tab.Timeout(time.Minute).Race().Element("#nblogout").Element("#auth-error-message-box").Element("img[alt='captcha']").Do()
+	race, err := tab.Race().Element("#nblogout").Element("#auth-error-message-box").Element("img[alt='captcha']").Do()
 	if err != nil {
 		return fmt.Errorf("failure doing selector race: %w", err)
 	}
-	authFailed, err := authResult.Matches("#auth-error-message-box")
+	authFailed, err := race.Matches("#auth-error-message-box")
 	if err != nil {
 		return fmt.Errorf("failure checking for authentication error match: %w", err)
 	}
 	if authFailed {
 		return fmt.Errorf("failure authenticating with the provided credentials")
 	}
-	captcha, err := authResult.Matches("img[alt='captcha']")
+	captcha, err := race.Matches("img[alt='captcha']")
 	if err != nil {
 		return fmt.Errorf("failure checking for captcha match: %w", err)
 	}
@@ -150,35 +147,13 @@ func authenticateUser(browser *rod.Browser, config *appconfig.IMDb) error {
 	return nil
 }
 
-func setBrowserCookies(browser *rod.Browser, config *appconfig.IMDb) error {
-	cookies := []*proto.NetworkCookieParam{
-		{
-			Name:   imdbCookieNameAtMain,
-			Value:  *config.CookieAtMain,
-			Domain: imdbCookieDomain,
-		},
-		{
-			Name:   imdbCookieNameUbidMain,
-			Value:  *config.CookieUbidMain,
-			Domain: imdbCookieDomain,
-		},
-	}
-	if err := browser.SetCookies(cookies); err != nil {
-		return fmt.Errorf("failure setting browser cookies: %w", err)
-	}
-	return nil
-}
-
 func (c *IMDbClient) hydrate() error {
 	if *c.config.Auth == appconfig.IMDbAuthMethodNone {
 		return nil
 	}
-	tab, err := stealth.Page(c.browser)
+	tab, cleanupFunc, err := c.navigateAndValidateResponse(imdbPathBase + imdbPathWatchlist)
+	defer cleanupFunc()
 	if err != nil {
-		return fmt.Errorf("failure opening browser tab: %w", err)
-	}
-	defer tab.MustClose()
-	if tab, err = navigateAndValidateResponse(tab, imdbPathBase+imdbPathWatchlist); err != nil {
 		return fmt.Errorf("failure navigating and validating response: %w", err)
 	}
 	hyperlink, err := tab.Element("a[data-testid='list-author-link']")
@@ -248,12 +223,13 @@ func (c *IMDbClient) ListExport(id string) error {
 }
 
 func (c *IMDbClient) ListsExport(ids ...string) error {
+	var errGroup errgroup.Group
 	for _, id := range ids {
-		if err := c.ListExport(id); err != nil {
-			return err
-		}
+		errGroup.Go(func() error {
+			return c.ListExport(id)
+		})
 	}
-	return nil
+	return errGroup.Wait()
 }
 
 func (c *IMDbClient) ListsGet(ids ...string) ([]entities.IMDbList, error) {
@@ -361,14 +337,8 @@ func (c *IMDbClient) listDownload(resource *rod.Element) (*entities.IMDbList, er
 }
 
 func (c *IMDbClient) getExportedResources(ids ...string) (rod.Elements, func(), error) {
-	tab, err := stealth.Page(c.browser)
+	tab, cleanupFunc, err := c.navigateAndValidateResponse(imdbPathBase + imdbPathExports)
 	if err != nil {
-		return nil, func() {}, fmt.Errorf("failure opening browser tab: %w", err)
-	}
-	cleanupFunc := func() {
-		tab.MustClose()
-	}
-	if tab, err = navigateAndValidateResponse(tab, imdbPathBase+imdbPathExports); err != nil {
 		return nil, cleanupFunc, fmt.Errorf("failure navigating and validating response: %w", err)
 	}
 	if err = c.waitExportsReady(tab, ids...); err != nil {
@@ -382,38 +352,34 @@ func (c *IMDbClient) getExportedResources(ids ...string) (rod.Elements, func(), 
 }
 
 func (c *IMDbClient) exportResource(url string) error {
-	tab, err := stealth.Page(c.browser)
+	tab, cleanupFunc, err := c.navigateAndValidateResponse(url)
+	defer cleanupFunc()
 	if err != nil {
-		return fmt.Errorf("failure opening browser tab: %w", err)
-	}
-	defer tab.MustClose()
-	if tab, err = navigateAndValidateResponse(tab, url); err != nil {
 		return fmt.Errorf("failure navigating and validating response: %w", err)
 	}
-	exportButton, err := tab.Timeout(time.Minute).Race().Element("div[data-testid='hero-list-subnav-export-button'] button").Element("div[data-testid='list-page-mc-private-list-content']").Do()
+	race, err := tab.Race().Element("div[data-testid='hero-list-subnav-export-button'] button").Element("div[data-testid='list-page-mc-private-list-content']").Do()
 	if err != nil {
 		return fmt.Errorf("failure doing selector race: %w", err)
 	}
-	resourcePrivate, err := exportButton.Matches("div[data-testid='list-page-mc-private-list-content']")
+	resourcePrivate, err := race.Matches("div[data-testid='list-page-mc-private-list-content']")
 	if err != nil {
 		return fmt.Errorf("failure checking for private resource match: %w", err)
 	}
 	if resourcePrivate {
 		return fmt.Errorf("resource at url %s is private, cannot proceed", url)
 	}
-	if err = exportButton.Click(proto.InputMouseButtonLeft, 1); err != nil {
+	wait := tab.WaitRequestIdle(time.Second, []string{"pageAction=start-export"}, nil, nil)
+	if err = race.Click(proto.InputMouseButtonLeft, 1); err != nil {
 		return fmt.Errorf("failure clicking on export resource button: %w", err)
 	}
-	if _, err = tab.Element("a.exp-pmpt__btn"); err != nil {
-		return fmt.Errorf("failure finding exports page button: %w", err)
-	}
+	wait()
 	return nil
 }
 
 func (c *IMDbClient) waitExportsReady(tab *rod.Page, ids ...string) error {
-	maxRetries := 15
-	for attempts := 1; attempts <= maxRetries; attempts++ {
-		if attempts == maxRetries {
+	maxRetries := 30
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if attempt == maxRetries {
 			return fmt.Errorf("reached max retry attempts waiting for resources %s to become available", ids)
 		}
 		evalOpts := rod.Eval(buildSelector(ids...))
@@ -435,8 +401,8 @@ func (c *IMDbClient) waitExportsReady(tab *rod.Page, ids ...string) error {
 			c.logger.Info("exports are ready for download", slog.Any("ids", ids), slog.Int("count", len(ids)))
 			break
 		}
-		time.Sleep(time.Second * 20)
-		c.logger.Info("reloading exports tab to check the latest status")
+		c.logger.Info("waiting 15s before reloading exports tab to check the latest status", slog.Int("attempt", attempt))
+		time.Sleep(time.Second * 15)
 		if err = tab.Reload(); err != nil {
 			return fmt.Errorf("failure reloading exports tab: %w", err)
 		}
@@ -486,12 +452,9 @@ func (c *IMDbClient) filterResources(resources rod.Elements, ids ...string) (rod
 }
 
 func (c *IMDbClient) lidsScrape() ([]string, error) {
-	tab, err := stealth.Page(c.browser)
+	tab, cleanupFunc, err := c.navigateAndValidateResponse(imdbPathBase + imdbPathLists)
+	defer cleanupFunc()
 	if err != nil {
-		return nil, fmt.Errorf("failure opening browser tab: %w", err)
-	}
-	defer tab.MustClose()
-	if tab, err = navigateAndValidateResponse(tab, imdbPathBase+imdbPathLists); err != nil {
 		return nil, fmt.Errorf("failure navigating and validating response: %w", err)
 	}
 	hasLists, listCountDiv, err := tab.Has("div[data-testid='list-page-mc-total-items']")
@@ -554,6 +517,30 @@ func (c *IMDbClient) scrollUntilAllElementsVisible(tab *rod.Page, selector strin
 		return c.scrollUntilAllElementsVisible(tab, selector, count)
 	}
 	return nil
+}
+
+func (c *IMDbClient) navigateAndValidateResponse(url string) (*rod.Page, func(), error) {
+	tab, err := stealth.Page(c.browser)
+	if err != nil {
+		return nil, func() {}, fmt.Errorf("failure opening browser tab: %w", err)
+	}
+	cleanupFunc := func() {
+		tab.MustClose()
+	}
+	go tab.MustHandleDialog()
+	var event proto.NetworkResponseReceived
+	wait := tab.WaitEvent(&event)
+	if err = tab.Navigate(url); err != nil {
+		return nil, cleanupFunc, fmt.Errorf("failure navigating to url %s: %w", url, err)
+	}
+	wait()
+	if status := event.Response.Status; status != http.StatusOK {
+		return nil, cleanupFunc, fmt.Errorf("navigating to %s produced %d status", url, status)
+	}
+	if err = tab.WaitLoad(); err != nil {
+		return nil, cleanupFunc, fmt.Errorf("failure waiting for tab %s to load: %w", url, err)
+	}
+	return tab, cleanupFunc, nil
 }
 
 func isListHyperlink(href string) bool {
@@ -636,18 +623,21 @@ func buildSelector(ids ...string) string {
 	return fmt.Sprintf(format, selectors.String())
 }
 
-func navigateAndValidateResponse(tab *rod.Page, url string) (*rod.Page, error) {
-	var event proto.NetworkResponseReceived
-	wait := tab.WaitEvent(&event)
-	if err := tab.Navigate(url); err != nil {
-		return nil, fmt.Errorf("failure navigating to url: %w", err)
+func setBrowserCookies(browser *rod.Browser, config *appconfig.IMDb) error {
+	cookies := []*proto.NetworkCookieParam{
+		{
+			Name:   imdbCookieNameAtMain,
+			Value:  *config.CookieAtMain,
+			Domain: imdbCookieDomain,
+		},
+		{
+			Name:   imdbCookieNameUbidMain,
+			Value:  *config.CookieUbidMain,
+			Domain: imdbCookieDomain,
+		},
 	}
-	wait()
-	if status := event.Response.Status; status != http.StatusOK {
-		return nil, fmt.Errorf("navigating to %s produced %d status", url, status)
+	if err := browser.SetCookies(cookies); err != nil {
+		return fmt.Errorf("failure setting browser cookies: %w", err)
 	}
-	if err := tab.WaitLoad(); err != nil {
-		return nil, fmt.Errorf("failure waiting for tab to load: %w", err)
-	}
-	return tab, nil
+	return nil
 }
