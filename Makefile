@@ -4,7 +4,7 @@ build:
 	@go build -o build/its main.go
 
 package:
-	@docker buildx build -t its:dev --platform=linux/amd64 .
+	@docker buildx build -t its:dev --platform=linux/amd64 --load .
 
 configure:
 	@./build/its configure
