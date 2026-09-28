@@ -69,6 +69,7 @@ jobs:
         GH_TOKEN: ${{ secrets.GH_PAT }}
       run: |
         if [ ! -f "$ITS_TRAKT_TOKENFILE" ]; then
+          echo "no Trakt tokenfile at $ITS_TRAKT_TOKENFILE"
           exit 0
         fi
         if [ -z "$GH_TOKEN" ]; then
@@ -76,3 +77,4 @@ jobs:
           exit 1
         fi
         gh secret set TRAKT_TOKEN --repo "$GITHUB_REPOSITORY" < "$ITS_TRAKT_TOKENFILE"
+        echo "Stored $ITS_TRAKT_TOKENFILE TRAKT_TOKEN GitHub secret"
