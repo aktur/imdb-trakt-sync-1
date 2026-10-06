@@ -230,7 +230,30 @@ func (at *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req.Header.Set("authorization", "Bearer "+at.accessToken.token)
 	req.Header.Set("trakt-api-key", at.clientID)
 	req.Header.Set("trakt-api-version", "2")
-	return at.next.RoundTrip(req)
+	resp, err := at.next.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	// A 401/403 means the access token was rejected by the server even though
+	// it has not expired locally (e.g. Trakt revoked the session). Attempt a
+	// proactive refresh so the persisted token is valid for the next run, and
+	// retry the current request once with the fresh token.
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		resp.Body.Close()
+		at.logger.Warn("trakt access token rejected, attempting refresh", "status", resp.StatusCode)
+		accessToken, refreshErr := at.authClient.getAccessToken(ctx, grantTypeRefreshToken, at.accessToken.refreshToken)
+		if refreshErr != nil {
+			return nil, fmt.Errorf("failure exchanging trakt refresh token for access token after %d response: %w", resp.StatusCode, refreshErr)
+		}
+		at.accessToken = accessToken
+		if persistErr := at.persist(); persistErr != nil {
+			return nil, persistErr
+		}
+		retryReq := req.Clone(ctx)
+		retryReq.Header.Set("authorization", "Bearer "+at.accessToken.token)
+		return at.next.RoundTrip(retryReq)
+	}
+	return resp, nil
 }
 
 // bootstrap runs Trakt's OAuth device authorization grant end to end. It

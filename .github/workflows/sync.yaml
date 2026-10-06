@@ -53,16 +53,19 @@ jobs:
       run: |
         if [ -n "$TRAKT_TOKEN" ]; then
           printf '%s' "$TRAKT_TOKEN" > "$ITS_TRAKT_TOKENFILE"
+          sha256sum "$ITS_TRAKT_TOKENFILE" > "$ITS_TRAKT_TOKENFILE.sha256"
         else
           echo "no TRAKT_TOKEN secret set; sync will print device authorization instructions, wait for manual auth and fail if unattended"
         fi
     - name: Sync
       run: make sync
-    # Trakt rotates the refresh token every 7 days, so the token file
-    # written by Sync (if any) must be written back to the repository
-    # secret, or the next scheduled run will require manual intervention.
-    # Runs even if Sync failed, since the token may have already been
-    # rotated by the first Trakt API call it made.
+    # Trakt rotates the refresh token when it is exchanged, so the token file
+    # written by Sync (if any) must be written back to the repository secret,
+    # or the next scheduled run will fail. Runs even if Sync failed, since the
+    # token may have already been rotated by the first Trakt API call it made.
+    # The secret is only updated when the token file actually changed during
+    # this run; an unchanged file means no rotation happened and re-saving the
+    # same value would be a no-op that wastes a GitHub API call.
     - name: Persist rotated Trakt token
       if: always()
       env:
@@ -72,9 +75,13 @@ jobs:
           echo "no Trakt tokenfile at $ITS_TRAKT_TOKENFILE"
           exit 0
         fi
+        if [ -f "$ITS_TRAKT_TOKENFILE.sha256" ] && sha256sum --check --status "$ITS_TRAKT_TOKENFILE.sha256"; then
+          echo "Trakt token unchanged, skipping secret update"
+          exit 0
+        fi
         if [ -z "$GH_TOKEN" ]; then
           echo "no GH_PAT secret set; cannot persist the rotated Trakt token - see README"
           exit 1
         fi
         gh secret set TRAKT_TOKEN --repo "$GITHUB_REPOSITORY" < "$ITS_TRAKT_TOKENFILE"
-        echo "Stored $ITS_TRAKT_TOKENFILE TRAKT_TOKEN GitHub secret"
+        echo "Stored updated Trakt token to GitHub secret"
