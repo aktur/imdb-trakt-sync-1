@@ -18,6 +18,7 @@ import (
 const (
 	pathAuthCodes           = "/oauth/device/code"
 	pathAuthTokens          = "/oauth/device/token"
+	pathOAuthToken          = "/oauth/token"
 	pathBaseAPI             = "https://api.trakt.tv"
 	pathHistory             = "/sync/history"
 	pathHistoryGet          = "/sync/history/%s/%s"

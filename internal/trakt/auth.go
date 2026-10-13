@@ -123,7 +123,14 @@ func (ac *authClient) getAccessToken(ctx context.Context, grantType, secret stri
 		return nil, fmt.Errorf("failure marshaling auth tokens body: %w", err)
 	}
 	body := bytes.NewReader(b)
-	resp, err := doRequest(ctx, ac.client, http.MethodPost, ac.baseURL, pathAuthTokens, nil, body, nil, http.StatusOK)
+	// Refresh token exchange must use the standard OAuth endpoint, not the
+	// device-flow polling endpoint; the latter only accepts authorization_code
+	// grants and returns 400 for any other grant type.
+	path := pathOAuthToken
+	if grantType == grantTypeAuthorizationCode {
+		path = pathAuthTokens
+	}
+	resp, err := doRequest(ctx, ac.client, http.MethodPost, ac.baseURL, path, nil, body, nil, http.StatusOK)
 	if err != nil {
 		return nil, err
 	}
@@ -218,8 +225,8 @@ func (at *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		if err = at.persist(); err != nil {
 			return nil, err
 		}
-	}
-	if at.accessToken.isExpired() {
+		// Bootstrap just issued a fresh token; skip the expiry check below.
+	} else if at.accessToken.isExpired() {
 		accessToken, err := at.authClient.getAccessToken(ctx, grantTypeRefreshToken, at.accessToken.refreshToken)
 		if err != nil {
 			return nil, fmt.Errorf("failure exchanging trakt refresh token for access token: %w", err)
