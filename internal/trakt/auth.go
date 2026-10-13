@@ -86,8 +86,10 @@ func newAuthTransport(next http.RoundTripper, ac *authClient, clientID, tokenFil
 	}
 }
 
+const tokenRefreshMargin = 7 * 24 * time.Hour
+
 func (at *accessToken) isExpired() bool {
-	return at != nil && time.Now().After(at.expiresAt)
+	return at != nil && time.Now().After(at.expiresAt.Add(-tokenRefreshMargin))
 }
 
 func (ac *authClient) getAuthCodes(ctx context.Context) (*authCodesResponse, error) {
