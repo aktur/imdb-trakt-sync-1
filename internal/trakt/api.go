@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -94,6 +95,9 @@ func NewAPI(ctx context.Context, conf config.Trakt, logger *slog.Logger) (API, e
 // postItemsChunked splits its into chunks of at most bulkRequestChunkSize
 // and POSTs each chunk to path in turn, merging the per-chunk responses into
 // a single result so callers can log/handle it as if it were one request.
+// If a chunk returns 400 (invalid_request_body), each item in that chunk is
+// retried individually so that only the malformed item is skipped rather than
+// losing the whole chunk.
 func (c *client) postItemsChunked(ctx context.Context, path string, its Items, statusCode int) (response, error) {
 	merged := response{}
 	for chunk := range slices.Chunk(its, bulkRequestChunkSize) {
@@ -103,6 +107,19 @@ func (c *client) postItemsChunked(ctx context.Context, path string, its Items, s
 		}
 		resp, err := doRequest(ctx, c.httpClient, http.MethodPost, c.baseURL, path, nil, bytes.NewReader(b), nil, statusCode)
 		if err != nil {
+			var statusErr *UnexpectedStatusCodeError
+			if errors.As(err, &statusErr) && statusErr.Got == http.StatusBadRequest {
+				for _, item := range chunk {
+					r, skipErr := c.postSingleItem(ctx, path, item, statusCode)
+					if skipErr != nil {
+						return response{}, skipErr
+					}
+					if r != nil {
+						merged.merge(*r)
+					}
+				}
+				continue
+			}
 			return response{}, fmt.Errorf("failure doing request: %w", err)
 		}
 		r, err := decodeJSON[response](resp.Body)
@@ -112,6 +129,30 @@ func (c *client) postItemsChunked(ctx context.Context, path string, its Items, s
 		merged.merge(r)
 	}
 	return merged, nil
+}
+
+// postSingleItem sends a single item to path. A 400 response is treated as a
+// bad item: it is logged and skipped (nil response, nil error). Any other
+// unexpected status code is returned as an error.
+func (c *client) postSingleItem(ctx context.Context, path string, item Item, statusCode int) (*response, error) {
+	b, err := json.Marshal(Items{item}.toListBody())
+	if err != nil {
+		return nil, fmt.Errorf("failure marshaling item: %w", err)
+	}
+	resp, err := doRequest(ctx, c.httpClient, http.MethodPost, c.baseURL, path, nil, bytes.NewReader(b), nil, statusCode)
+	if err != nil {
+		var statusErr *UnexpectedStatusCodeError
+		if errors.As(err, &statusErr) && statusErr.Got == http.StatusBadRequest {
+			c.logger.Warn("skipping item rejected by trakt", "type", item.Type, "item", item, "error", err)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failure doing request: %w", err)
+	}
+	r, err := decodeJSON[response](resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failure decoding response: %w", err)
+	}
+	return &r, nil
 }
 
 func (c *client) HistoryAdd(ctx context.Context, its Items) error {
