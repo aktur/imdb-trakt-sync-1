@@ -67,6 +67,7 @@ func NewAPI(ctx context.Context, conf *config.IMDb, logger *slog.Logger) (API, e
 	l := launcher.New().Headless(*conf.Headless).Bin(getBrowserPathOrFallback(*conf.BrowserPath)).
 		Set("allow-running-insecure-content").
 		Set("autoplay-policy", "user-gesture-required").
+		Set("disable-blink-features", "AutomationControlled").
 		Set("disable-component-update").
 		Set("disable-domain-reliability").
 		Set("disable-features", "AudioServiceOutOfProcess", "IsolateOrigins", "site-per-process").
