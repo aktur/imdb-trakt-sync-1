@@ -136,11 +136,18 @@ func (c *client) authenticateUser() error {
 		if err = c.handleWafChallenge(tab); err != nil {
 			return fmt.Errorf("failure handling waf challenge after reload: %w", err)
 		}
-		authenticated, _, err := tab.Has("#navUserMenu")
+		// Verify auth by navigating to a protected page. If IMDB redirects to
+		// the Amazon sign-in form, the cookies are invalid. This avoids
+		// depending on IMDb nav selectors that change with each UI redesign.
+		tab, err = c.navigateAndValidateResponse(c.baseURL + pathExports)
 		if err != nil {
-			return fmt.Errorf("failure checking nav user menu: %w", err)
+			return fmt.Errorf("failure navigating to exports page for auth check: %w", err)
 		}
-		if !authenticated {
+		onSigninPage, _, err := tab.Has("#ap_email")
+		if err != nil {
+			return fmt.Errorf("failure checking authentication state: %w", err)
+		}
+		if onSigninPage {
 			return fmt.Errorf("failure authenticating with the provided cookies")
 		}
 		return nil
