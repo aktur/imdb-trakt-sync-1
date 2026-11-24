@@ -462,7 +462,7 @@ func (c *client) exportResource(url string) error {
 		return fmt.Errorf("failure finding export menu item: %w", err)
 	}
 	wait := tab.WaitRequestIdle(time.Second, []string{"pageAction=start-export"}, nil, nil)
-	if err = exportMenuItem.Click(proto.InputMouseButtonLeft, 1); err != nil {
+	if _, err = exportMenuItem.Eval(`() => this.click()`); err != nil {
 		return fmt.Errorf("failure clicking on export menu item: %w", err)
 	}
 	wait()
@@ -481,7 +481,8 @@ func (c *client) openExportMenuItem(tab *rod.Page, actionsMenuButton *rod.Elemen
 	)
 	var lastErr error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		if err := actionsMenuButton.Click(proto.InputMouseButtonLeft, 1); err != nil {
+		// Use JS click to bypass pointer-events:none on the button wrapper.
+		if _, err := actionsMenuButton.Eval(`() => this.click()`); err != nil {
 			return nil, fmt.Errorf("failure clicking on actions menu button: %w", err)
 		}
 		exportMenuItem, err := tab.Timeout(openTimeout).ElementR(selectorActionsMenu+" li", "Export")
